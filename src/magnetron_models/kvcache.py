@@ -7,6 +7,8 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
+from __future__ import annotations
+
 from magnetron import Tensor
 
 

@@ -21,6 +21,15 @@ magnetron-models = "magnetron_models:main"
 requires = ["uv_build>=0.13.4,<0.14.0"]
 build-backend = "uv_build"
 
+[dependency-groups]
+inference = [
+    "tokenizers>=0.23.3",
+]
+examples = [
+    "huggingface-hub>=1.0.0",
+    "sounddevice>=0.5.6",
+]
+
 [tool.ruff]
 line-length = 150
 indent-width = 4

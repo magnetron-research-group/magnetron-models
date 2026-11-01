@@ -7,10 +7,11 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
+from __future__ import annotations
+
 import math
 from pathlib import Path
-
-from config import Config
+from magnetron_models.models.whisper.config import Config
 from magnetron import Tensor, nn, dtype, context
 from magnetron.snapshot import deserialize
 from magnetron_models.common import ModelBase, ConfigBase

@@ -7,8 +7,9 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
-from dataclasses import dataclass
+from __future__ import annotations
 
+from dataclasses import dataclass
 from magnetron_models.common import ConfigBase
 
 

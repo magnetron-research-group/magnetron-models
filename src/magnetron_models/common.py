@@ -7,12 +7,13 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
+from __future__ import annotations
+
 from abc import ABC
 from dataclasses import fields
 from typing import get_type_hints, get_args, get_origin, Any, Callable
 from enum import Enum
 from magnetron import nn, context, Tensor
-
 import gc
 
 
