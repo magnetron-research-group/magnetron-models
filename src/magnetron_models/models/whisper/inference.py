@@ -78,10 +78,10 @@ class WhisperInferenceAdapter(TranscribeAdapter):
             prompt = self._prompt(sess, req)
             for tok in self._decode(enc, prompt, req.max_toks):
                 toks.append(tok)
-                if delta := dec.push(tok):
-                    if first:
-                        delta, first = delta.lstrip(), False
-                    yield TranscribeChunk(delta, token=tok, segment_start=t, segment_end=dur + t)
+                delta = dec.push(tok)
+                if first and delta:
+                    delta, first = delta.lstrip(), False
+                yield TranscribeChunk(delta, token=tok, segment_start=t, segment_end=dur + t)
             if tail := dec.flush():
                 yield TranscribeChunk(delta=tail, segment_start=t, segment_end=dur + t)
             if req.condition_on_previous:

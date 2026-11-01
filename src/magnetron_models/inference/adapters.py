@@ -116,7 +116,13 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
 
 class TranscribeAdapter(InferenceAdapter[TranscribeRequest, TextResponse, TranscribeChunk]):
     def collect_stream(self, req: TranscribeRequest, chunks: Iterator[TextChunk]) -> TextResponse:
-        return TextResponse(text=''.join(chunk.delta for chunk in chunks))
+        text: list[str] = []
+        toks: list[int] = []
+        for chunk in chunks:
+            text.append(chunk.delta)
+            if chunk.token is not None:
+                toks.append(chunk.token)
+        return TextResponse(text=''.join(text), tokens=toks)
 
 
 class ImageGenAdapter(InferenceAdapter[ImageRequest, ImageResponse, ImageChunk]):
