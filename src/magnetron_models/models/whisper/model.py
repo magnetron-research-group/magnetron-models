@@ -44,7 +44,7 @@ class Attn(nn.Module):
             S = k.shape[2]
             k_pos = Tensor.arange(S).reshape(1, -1)
             q_pos = Tensor.arange(start=S - T, stop=S).reshape(-1, 1)
-            mask = Tensor.where(k_pos <= q_pos, 0, -1e-4).cast(scores.dtype).reshape(1, 1, T, S)
+            mask = Tensor.where(k_pos <= q_pos, 0, float('-inf')).cast(scores.dtype).reshape(1, 1, T, S)
             scores = scores + mask
         return self.out_proj((scores.softmax(dim=-1) @ v).transpose(1, 2).reshape(B, T, C))
 
