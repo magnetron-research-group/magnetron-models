@@ -13,12 +13,11 @@ import queue
 from collections.abc import Iterator
 import sounddevice as sd
 from magnetron import Tensor
-from examples import download_model
 from magnetron_models.inference import InferenceAdapter, load
 from magnetron_models.inference.adapters import TranscribeChunk, TranscribeRequest
 from magnetron_models.models.whisper.audio_processor import SAMPLE_RATE
 from magnetron_models.extra.vad import FRAME_LEN, SpeechBandEnergyVAD, segments
-from magnetron_models.utils import bytes_to_f32_tensor
+from magnetron_models.utils import bytes_to_f32_tensor, download_model
 
 HF_REPO_ID = 'mario-sieg/magnetron-whisper'
 HF_MODEL_FILE = 'whisper-base-bf16.mag'

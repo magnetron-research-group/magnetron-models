@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
+import ctypes
 from pathlib import Path
 from typing import Any
-from magnetron import SnapshotStreamReader
+from magnetron import SnapshotStreamReader, Tensor, dtype
 from magnetron.snapshot import _FileManifest
 
 
@@ -28,3 +29,11 @@ def bytes_to_f32_tensor(buf: bytes) -> Tensor:
     ctypes.memmove(tensor.data_ptr_mut, buf, len(buf))
     tensor.sync()
     return tensor
+
+
+def download_model(repo_id: str, filename: str) -> Path:
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as e:
+        raise ImportError('huggingface_hub is required to download models. Install it with: uv sync --group examples') from e
+    return Path(hf_hub_download(repo_id=repo_id, filename=filename))

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from examples import download_model
+from magnetron_models.utils import download_model
 from magnetron_models.inference import load, InferenceAdapter
 from magnetron_models.inference.adapters import TranscribeRequest, TranscribeChunk
 
