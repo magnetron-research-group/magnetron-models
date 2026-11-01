@@ -1,0 +1,22 @@
+[project]
+name = "magnetron-models"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Mario Sieg", email = "mario.sieg.64@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "magnetron>=0.2.3",
+]
+
+[tool.uv] # We always want to use latest magnetron
+upgrade-package = ["magnetron"]
+
+[project.scripts]
+magnetron-models = "magnetron_models:main"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
