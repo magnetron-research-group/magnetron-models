@@ -87,19 +87,29 @@ def segments(
     frames: Iterator[Tensor],
     vad: SpeechBandEnergyVAD,
     start_frames: int = 3,
-    end_silence_ms: int = 700,
-    short_end_silence_ms: int = 1500,
-    short_s: float = 2.0,
+    end_silence_ms: int = 600,
+    min_end_silence_ms: int = 120,
+    short_end_silence_ms: int = 1000,
+    short_s: float = 1.5,
+    target_seg_s: float = 5.0,
     preroll_ms: int = 300,
     tail_ms: int = 300,
-    max_seg_s: float = 25.0,
-    split_search_s: float = 4.0,
+    max_seg_s: float = 12.0,
+    split_search_s: float = 3.0,
     min_speech_s: float = 0.4,
     min_flux_db: float = 0.5,
 ) -> Iterator[Tensor]:
     ms = lambda v: max(1, int(v) // FRAME_MS)
     preroll: deque[Tensor] = deque(maxlen=ms(preroll_ms))
-    end_frames, short_end_frames, short_frames = ms(end_silence_ms), ms(short_end_silence_ms), ms(short_s * 1000)
+    end_frames, min_end_frames = ms(end_silence_ms), ms(min_end_silence_ms)
+    short_end_frames, short_frames, target_frames = ms(short_end_silence_ms), ms(short_s * 1000), ms(target_seg_s * 1000)
+
+    def required_silence(speech_frames: int) -> int:
+        if speech_frames < short_frames:
+            return short_end_frames
+        t = min(1.0, (speech_frames - short_frames) / max(1, target_frames - short_frames))
+        return round(end_frames + t * (min_end_frames - end_frames))
+
     tail_frames, max_frames, search_frames = ms(tail_ms), ms(max_seg_s * 1000), ms(split_search_s * 1000)
     min_voiced = ms(min_speech_s * 1000)
     seg: list[Tensor] = []
@@ -134,7 +144,7 @@ def segments(
         n_voiced += voiced
         silence_run = 0 if voiced_run >= start_frames else silence_run + 1
         speech_frames = len(seg) - silence_run
-        if silence_run >= (short_end_frames if speech_frames < short_frames else end_frames):
+        if silence_run >= required_silence(speech_frames):
             yield from emit(seg[: speech_frames + tail_frames], dbs[:speech_frames], n_voiced)
             seg, dbs = [], []
         elif len(seg) >= max_frames:
