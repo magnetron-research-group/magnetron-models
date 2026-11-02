@@ -9,13 +9,12 @@
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Iterator
-
-from magnetron import Tensor
+from typing import Iterable, Iterator, override
+from magnetron import Tensor, dtype
 from enum import Enum
-
 from magnetron_models.inference import InferenceAdapter
 
 
@@ -27,6 +26,7 @@ class TextRequest:
     prompt: str | list[dict[str, str]] | Tensor  # raw text or chat msgs or already tokenized ids
     max_toks: int = 512
     temp: float = 0.0
+    topk: int = 0
     stop: list[str] = field(default_factory=list)
 
 
@@ -99,22 +99,8 @@ class ImageChunk:
     preview: ImageResponse | None = None
 
 
-### Base Adapters ###
-
-
-class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
-    def collect_stream(self, req: TextRequest, chunks: Iterator[TextChunk]) -> TextResponse:
-        text: list[str] = []
-        toks: list[int] = []
-        for chunk in chunks:
-            text.append(chunk.delta)
-            if chunk.token is not None:
-                toks.append(chunk.token)
-        reason = StopReason.LENGTH if len(toks) >= req.max_toks else StopReason.STOP
-        return TextResponse(text=''.join(text), tokens=toks, stop_reason=reason)
-
-
 class TranscribeAdapter(InferenceAdapter[TranscribeRequest, TextResponse, TranscribeChunk]):
+    @override
     def collect_stream(self, req: TranscribeRequest, chunks: Iterator[TextChunk]) -> TextResponse:
         text: list[str] = []
         toks: list[int] = []
@@ -126,6 +112,7 @@ class TranscribeAdapter(InferenceAdapter[TranscribeRequest, TextResponse, Transc
 
 
 class ImageGenAdapter(InferenceAdapter[ImageRequest, ImageResponse, ImageChunk]):
+    @override
     def collect_stream(self, req: ImageRequest, chunks: Iterator[ImageChunk]) -> ImageResponse:
         last = None
         for chunk in chunks:

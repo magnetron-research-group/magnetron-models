@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-from magnetron import Tensor
+from pathlib import Path
+from typing import override
+from magnetron import no_grad
 from magnetron_models.inference import register_inference_adapter
-from magnetron_models.inference.adapters import TextGenAdapter
+from magnetron_models.inference.text import TextGenAdapter
 from magnetron_models.models.qwen3.model import Qwen3Model
 
 
@@ -20,4 +21,16 @@ from magnetron_models.models.qwen3.model import Qwen3Model
 class Qwen3InferenceAdapter(TextGenAdapter):
     arch = 'qwen3'
 
-    def __init__(self, model: Qwen3Model, tensors: dict[str, Tensor], tokenizer: Any) -> None: ...
+    @override
+    @classmethod
+    @no_grad()
+    def load(cls, snapshot: Path) -> Qwen3InferenceAdapter:
+        from tokenizers import Tokenizer
+
+        _, model = Qwen3Model.from_snapshot(snapshot)
+        tok = Tokenizer.from_str(model.snapshot_metadata['tokenizer_json'])
+        return cls(model, tok, frozenset({model.cfg.eos_token_id, model.cfg.bos_token_id}))
+
+    @override
+    def apply_chat_template(self, msgs: list[dict[str, str]]) -> str:
+        return ''.join(f'<|im_start|>{msg["role"]}\n{msg["content"]}<|im_end|>\n' for msg in msgs) + '<|im_start|>assisant\n'

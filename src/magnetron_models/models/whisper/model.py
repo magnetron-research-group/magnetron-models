@@ -10,11 +10,9 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from magnetron_models.models.whisper.config import WhisperConfig
-from magnetron import Tensor, nn, dtype, context
-from magnetron.snapshot import deserialize
-from magnetron_models.common import ModelBase, ConfigBase
+from magnetron import Tensor, nn, dtype
+from magnetron_models.common import ModelBase
 from magnetron_models.kvcache import KVLayerCache
 
 
@@ -140,21 +138,14 @@ class _Decoder(nn.Module):
 
 
 class WhisperModel(ModelBase):
+    arch = 'whisper'
+    config_cls = WhisperConfig
+
     def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__(cfg, is_trainable=False)
         self.cfg = cfg
         self.encoder = _Encoder(cfg)
         self.decoder = _Decoder(cfg)
-
-    @staticmethod
-    def from_snapshot(file: Path) -> tuple[dict[str, Tensor], WhisperModel]:
-        tensors, meta = deserialize(file)
-        if meta.get('arch') != 'whisper':
-            raise RuntimeError(f'{file} holds a {meta.get("arch") or "nameless"} model, not whisper')
-        context.set_default_dtype(getattr(dtype, meta['dtype']))
-        model = WhisperModel(ConfigBase.decode(WhisperConfig, meta['mod_cfg']))
-        model.load_tensors(tensors, meta)
-        return tensors, model
 
     def encode(self, mel: Tensor) -> Tensor:
         return self.encoder(mel)

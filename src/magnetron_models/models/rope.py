@@ -29,7 +29,7 @@ def apply_rope(q: Tensor, k: Tensor, cfreq: Tensor, sfreq: Tensor, idx: Tensor) 
         return rows.reshape(*idx.shape, table.shape[-1])
 
     def _rot_half(x: Tensor) -> Tensor:
-        return Tensor.cat([-x[:, :, :, x.shape[-1] >> 1 :], x[:, :, :, : x.shape[-1] >> 1]], dim=1)
+        return Tensor.cat([-x[:, :, :, x.shape[-1] >> 1 :], x[:, :, :, : x.shape[-1] >> 1]], dim=-1)
 
     cos = _rope_rows(cfreq, idx)
     sin = _rope_rows(sfreq, idx)

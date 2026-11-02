@@ -10,16 +10,15 @@
 from __future__ import annotations
 
 import ctypes
-from typing import Iterable, Any
-
-from magnetron_models.inference import register_inference_adapter
-from magnetron_models.inference.adapters import TranscribeAdapter, TranscribeRequest, TextChunk, TranscribeChunk
-from magnetron_models.inference.text import IncrementalDecoder
-from magnetron_models.models.whisper.audio_processor import LogMelSpectogram, chunks, load_audio_and_resample
+from typing import Iterable, Any, override
 from collections.abc import Iterator
 from pathlib import Path
 from dataclasses import dataclass, field
 from magnetron import Tensor, context, dtype, no_grad
+from magnetron_models.inference import register_inference_adapter
+from magnetron_models.inference.adapters import TranscribeAdapter, TranscribeRequest, TextChunk, TranscribeChunk
+from magnetron_models.inference.text import IncrementalDecoder
+from magnetron_models.models.whisper.audio_processor import LogMelSpectogram, chunks, load_audio_and_resample
 from magnetron_models.models.whisper.audio_processor import SAMPLE_RATE
 from magnetron_models.models.whisper.model import WhisperModel
 from magnetron_models.utils import bytes_to_f32_tensor
@@ -55,6 +54,7 @@ class WhisperInferenceAdapter(TranscribeAdapter):
         self.suppress = self._bias(gen.get('suppress_tokens', hf.get('suppress_tokens')) or [])
         self.begin_suppress = self._bias(gen.get('begin_suppress_tokens', hf.get('begin_suppress_tokens')) or [])
 
+    @override
     @classmethod
     @no_grad()
     def load(cls, snapshot: Path) -> WhisperInferenceAdapter:
@@ -63,6 +63,7 @@ class WhisperInferenceAdapter(TranscribeAdapter):
         tensors, model = WhisperModel.from_snapshot(snapshot)
         return cls(model, tensors, Tokenizer.from_str(model.snapshot_metadata['tokenizer_json']))
 
+    @override
     @no_grad()
     def stream(self, req: TranscribeRequest) -> Iterator[TextChunk]:
         sess = _Session(req.language)

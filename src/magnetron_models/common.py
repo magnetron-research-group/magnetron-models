@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import fields
-from typing import get_type_hints, get_args, get_origin, Any, Callable
+from pathlib import Path
+from typing import get_type_hints, get_args, get_origin, Any, Callable, ClassVar, Self
 from enum import Enum
-from magnetron import nn, context, Tensor
+from magnetron import nn, context, Tensor, dtype
+from magnetron.snapshot import deserialize
 import gc
 
 
@@ -64,6 +66,19 @@ class SnapshotModule(nn.Module):
 
 
 class ModelBase(SnapshotModule, ABC):
+    arch: ClassVar[str]  # must match meta['arch']
+    config_cls: ClassVar[type[ConfigBase]]
+
+    @classmethod
+    def from_snapshot(cls, file: Path) -> tuple[dict[str, Tensor], Self]:
+        tensors, meta = deserialize(file)
+        if meta.get('arch') != cls.arch:
+            raise RuntimeError(f'{file} holds a {meta.get("arch") or "nameless"} model, not {cls.arch}')
+        context.set_default_dtype(getattr(dtype, meta['dtype']))
+        model = cls(ConfigBase.decode(cls.config_cls, meta['mod_cfg']))
+        model.load_tensors(tensors, meta)
+        return tensors, model
+
     def __init__(self, cfg: ConfigBase, is_trainable: bool) -> None:
         self.cfg = cfg
         self._is_trainable = is_trainable

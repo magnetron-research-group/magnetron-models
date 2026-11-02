@@ -87,9 +87,12 @@ class _Block(nn.Module):
 
 
 class Qwen3Model(ModelBase):
+    arch = 'qwen3'
+    config_cls = Qwen3Config
+
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: Qwen3Config) -> None:
-        super().__init__()
+        super().__init__(cfg, is_trainable=False)
         self.cfg = cfg
         self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.hidden_size)
         self.layers = nn.ModuleList([_Block(cfg) for _ in range(cfg.num_hidden_layers)])
@@ -103,7 +106,7 @@ class Qwen3Model(ModelBase):
     def forward(self, x: Tensor, idx: Tensor) -> Tensor:
         h = self.embed_tokens(x)
         for i, l in enumerate(self.layers):
-            csin, ccos = self.rope_cache
+            ccos, csin = self.rope_cache
             h = l(h, ccos, csin, idx, self.kv_cache[i])
         h = self.norm(h)
         return Tensor.einsum('...H,VH->...V', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
