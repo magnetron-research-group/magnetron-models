@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, override, Iterator, Protocol
+from typing import Any, override, Generator, Iterator, Protocol
 from magnetron import no_grad, Tensor, dtype
 from magnetron_models.inference import InferenceAdapter
 from magnetron_models.inference.adapters import TextRequest, TextChunk, TextResponse, StopReason
@@ -40,7 +40,7 @@ class IncrementalDecoder:
 class CausalLM(Protocol):
     kv_cache: KVCache
 
-    def __call__(self, x: Tensor, idx: Tensor) -> Tensor: ...  # (1,T) ids -> (1,T,V) logits
+    def __call__(self, x: Tensor, idx: Tensor) -> Tensor: ...  # (1,T) ids -> (1,1,V) logits of the last position
 
 
 class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
@@ -64,30 +64,33 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
     def _sample(logits: Tensor, tmp: float, topk: int) -> Tensor:
         if tmp <= 0.0:
             return logits.argmax(dim=0).reshape(1)
-        vals, idx = (logits / tmp).topk(max(1, min(topk, logits.shape[0])), dim=0, largest=True, sorted=False)
+        V = logits.shape[0]
+        vals, idx = (logits / tmp).topk(V if topk <= 0 else min(topk, V), dim=0, largest=True, sorted=False)
         return idx.gather(0, vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1).reshape(1))
 
-    def _decode_tokens(self, ids: Tensor, req: TextRequest) -> Iterator[int]:
+    def _decode_tokens(self, ids: Tensor, req: TextRequest) -> Generator[int, None, StopReason]:
         cache = self.model.kv_cache
         cache.clear()
         cap = cache[0].k.shape[2]
         T = ids.shape[1]
+        if T > cap:
+            raise ValueError(f'Prompt has {T} tokens but the KV cache only holds {cap}')
         logits = self.model(ids, Tensor.arange(T).reshape(1, -1))
-        sample_tok = lambda: self._sample(logits[0, -1], req.temp, req.topk)
-        tok = sample_tok()
-        pos = T
-        for _ in range(req.max_toks):
-            if pos >= cap:
-                return
-            logits = self.model(
-                tok.reshape(1, 1), Tensor([[pos]], dtype=dtype.int64)
-            )  # Async device: enqueue step i+1 before reading token i so the device works while we detokenize
-            nxt = sample_tok()
+        tok = self._sample(logits[0, -1], req.temp, req.topk)
+        for i in range(req.max_toks):
+            pos = T + i
+            last = i + 1 == req.max_toks or pos >= cap
+            if not last:  # Async device: enqueue step i+1 before reading token i so the device works while we detokenize
+                logits = self.model(tok.reshape(1, 1), Tensor([[pos]], dtype=dtype.int64))
+                nxt = self._sample(logits[0, -1], req.temp, req.topk)
             tid = int(tok.item())
             if tid in self.stop_ids:
-                return
+                return StopReason.STOP
             yield tid
-            tok, pos = nxt, 1 + pos
+            if last:
+                break
+            tok = nxt
+        return StopReason.LENGTH
 
     @override
     @no_grad()
@@ -95,25 +98,31 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
         dec = IncrementalDecoder(self.tok)
         hold = max((len(stop) for stop in req.stop), default=1) - 1
         buf = ''
-        prompt: Tensor = self.encode(req.prompt)
-        for tok in self._decode_tokens(prompt, req):
+        toks = self._decode_tokens(self.encode(req.prompt), req)
+        while True:
+            try:
+                tok = next(toks)
+            except StopIteration as e:
+                reason: StopReason = e.value
+                break
             buf += dec.push(tok)
             if (cut := min((i for stop in req.stop if (i := buf.find(stop)) != -1), default=-1)) != -1:
-                yield TextChunk(buf[:cut], token=tok)
+                yield TextChunk(buf[:cut], token=tok, stop_reason=StopReason.STOP)
                 return
-            emit = len(buf) - hold
+            emit = max(0, len(buf) - hold)
             yield TextChunk(buf[:emit], token=tok)
             buf = buf[emit:]
-        if tail := buf + dec.flush():
-            yield TextChunk(tail)
+        yield TextChunk(buf + dec.flush(), stop_reason=reason)
 
     @override
     def collect_stream(self, req: TextRequest, chunks: Iterator[TextChunk]) -> TextResponse:
         text: list[str] = []
         toks: list[int] = []
+        reason = StopReason.STOP
         for chunk in chunks:
             text.append(chunk.delta)
             if chunk.token is not None:
                 toks.append(chunk.token)
-        reason = StopReason.LENGTH if len(toks) >= req.max_toks else StopReason.STOP
+            if chunk.stop_reason is not None:
+                reason = chunk.stop_reason
         return TextResponse(text=''.join(text), tokens=toks, stop_reason=reason)

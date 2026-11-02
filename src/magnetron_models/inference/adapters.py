@@ -26,7 +26,7 @@ class TextRequest:
     prompt: str | list[dict[str, str]] | Tensor  # raw text or chat msgs or already tokenized ids
     max_toks: int = 512
     temp: float = 0.0
-    topk: int = 0
+    topk: int = 0  # 0 = no top-k (greedy)
     stop: list[str] = field(default_factory=list)
 
 
@@ -84,6 +84,7 @@ class ImageResponse:
 class TextChunk:
     delta: str
     token: int | None = None
+    stop_reason: StopReason | None = None  # Only set on the final chunk
 
 
 @dataclass

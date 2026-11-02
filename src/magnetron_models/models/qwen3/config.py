@@ -27,7 +27,6 @@ class Qwen3Config(ConfigBase):
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = True
     rope_theta: float = 5_000_000.0
-    sliding_window: int | None = None
     bos_token_id: int = 151643
     eos_token_id: int = 151645
     topk: int = 0  # 0 = greedy sampling

@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import math
 
-from magnetron import Tensor, nn
+from magnetron import Tensor, nn, dtype
 from magnetron_models.common import ModelBase
 from magnetron_models.kvcache import KVLayerCache, KVCache
 from magnetron_models.models.qwen3.config import Qwen3Config
 from magnetron_models.models.rope import apply_rope, precompute_freq_cache
 
 
-class _SWA(nn.Module):
+class _Attn(nn.Module):
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: Qwen3Config) -> None:
         super().__init__()
@@ -26,7 +26,6 @@ class _SWA(nn.Module):
         self.nheads: int = cfg.num_attention_heads
         self.nkv = cfg.num_key_value_heads
         self.nrep: int = self.nheads // self.nkv
-        self.sw = cfg.sliding_window
         self.q_proj = nn.Linear(cfg.hidden_size, self.nheads * self.hdim, bias=False)
         self.k_proj = nn.Linear(cfg.hidden_size, self.nkv * self.hdim, bias=False)
         self.v_proj = nn.Linear(cfg.hidden_size, self.nkv * self.hdim, bias=False)
@@ -40,21 +39,15 @@ class _SWA(nn.Module):
         cv = self.v_proj(x).reshape(B, T, self.nkv, self.hdim).transpose(1, 2)
         q = self.q_norm(self.q_proj(x).reshape(B, T, self.nheads, self.hdim).transpose(1, 2))
         q, ck = apply_rope(q, ck, cfreq, sfreq, idx)
-        if cache is not None:
-            k, v = cache.append(ck, cv, self.sw)
-        else:
-            k, v = ck, cv
+        k, v = cache.append(ck, cv) if cache is not None else (ck, cv)
         qg = q.reshape(B, self.nkv, self.nrep, T, self.hdim)
-        scores = Tensor.einsum('BKGTD,BKSD->BKGTS', qg, k) * (1.0 / math.sqrt(self.hdim))
+        scores = (Tensor.einsum('BKGTD,BKSD->BKGTS', qg, k) * (1.0 / math.sqrt(self.hdim))).cast(dtype.float32)
         ql, kl = q.shape[2], k.shape[2]
-        if ql == 1:
-            attn = scores
-        else:
+        if ql > 1:
             kpi = Tensor.arange(kl).reshape(1, -1)
             qpi = Tensor.arange(start=(kl - ql), stop=kl).reshape(-1, 1)
-            mask = Tensor.where(kpi <= qpi, 0.0, -1e4).cast(scores.dtype).reshape(1, 1, 1, ql, kl)
-            attn = mask + scores
-        out = Tensor.einsum('BKGTS,BKSD->BKGTD', attn.softmax(dim=-1), v)
+            scores = scores + Tensor.where(kpi <= qpi, 0.0, float('-inf')).cast(dtype.float32).reshape(1, 1, 1, ql, kl)
+        out = Tensor.einsum('BKGTS,BKSD->BKGTD', scores.softmax(dim=-1).cast(v.dtype), v)
         return self.o_proj(out.reshape(B, self.nheads, T, self.hdim).transpose(1, 2).reshape(B, T, -1))
 
 
@@ -75,7 +68,7 @@ class _Block(nn.Module):
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: Qwen3Config) -> None:
         super().__init__()
-        self.self_attn = _SWA(cfg)
+        self.self_attn = _Attn(cfg)
         self.mlp = self._MLP(cfg)
         self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)
@@ -103,10 +96,10 @@ class Qwen3Model(ModelBase):
         self.rope_cache: tuple[Tensor, Tensor] = precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.kv_cache = KVCache(cfg.num_key_value_heads, cfg.num_hidden_layers, cfg.max_position_embeddings, cfg.head_dim)
 
-    def forward(self, x: Tensor, idx: Tensor) -> Tensor:
+    def forward(self, x: Tensor, idx: Tensor) -> Tensor:  # (B,T) ids -> (B,1,V) logits of the last position only
         h = self.embed_tokens(x)
+        ccos, csin = self.rope_cache
         for i, l in enumerate(self.layers):
-            ccos, csin = self.rope_cache
             h = l(h, ccos, csin, idx, self.kv_cache[i])
-        h = self.norm(h)
+        h = self.norm(h[:, -1:])
         return Tensor.einsum('...H,VH->...V', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
