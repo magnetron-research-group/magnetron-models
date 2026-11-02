@@ -80,6 +80,7 @@ class ModelBase(SnapshotModule, ABC):
         return tensors, model
 
     def __init__(self, cfg: ConfigBase, is_trainable: bool) -> None:
+        super().__init__()
         self.cfg = cfg
         self._is_trainable = is_trainable
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from typing import Any, override, Iterator, Protocol
-from magnetron import no_grad, Tensor
+from magnetron import no_grad, Tensor, dtype
 from magnetron_models.inference import InferenceAdapter
 from magnetron_models.inference.adapters import TextRequest, TextChunk, TextResponse, StopReason
 from magnetron_models.kvcache import KVCache
@@ -65,7 +65,7 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
         if tmp <= 0.0:
             return logits.argmax(dim=0).reshape(1)
         vals, idx = (logits / tmp).topk(max(1, min(topk, logits.shape[0])), dim=0, largest=True, sorted=False)
-        return idx.gather(vals.softmax(dim=-1)).reshape(1, -1).multinomial(num_samples=1).reshape(1)
+        return idx.gather(0, vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1).reshape(1))
 
     def _decode_tokens(self, ids: Tensor, req: TextRequest) -> Iterator[int]:
         cache = self.model.kv_cache

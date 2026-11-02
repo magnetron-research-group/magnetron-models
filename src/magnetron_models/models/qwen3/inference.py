@@ -33,4 +33,4 @@ class Qwen3InferenceAdapter(TextGenAdapter):
 
     @override
     def apply_chat_template(self, msgs: list[dict[str, str]]) -> str:
-        return ''.join(f'<|im_start|>{msg["role"]}\n{msg["content"]}<|im_end|>\n' for msg in msgs) + '<|im_start|>assisant\n'
+        return ''.join(f'<|im_start|>{msg["role"]}\n{msg["content"]}<|im_end|>\n' for msg in msgs) + '<|im_start|>assistant\n'
