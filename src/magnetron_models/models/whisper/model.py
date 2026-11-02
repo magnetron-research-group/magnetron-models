@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from magnetron_models.models.whisper.config import Config
+from magnetron_models.models.whisper.config import WhisperConfig
 from magnetron import Tensor, nn, dtype, context
 from magnetron.snapshot import deserialize
 from magnetron_models.common import ModelBase, ConfigBase
 from magnetron_models.kvcache import KVLayerCache
 
 
-class Attn(nn.Module):
+class _Attn(nn.Module):
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, d_model: int, heads: int) -> None:
         super().__init__()
@@ -53,13 +53,13 @@ class Attn(nn.Module):
         return self.attend(x, k, v)
 
 
-class Encoder(nn.Module):
-    class Layer(nn.Module):
+class _Encoder(nn.Module):
+    class _Layer(nn.Module):
         @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
-        def __init__(self, cfg: Config) -> None:
+        def __init__(self, cfg: WhisperConfig) -> None:
             super().__init__()
             self.cfg = cfg
-            self.self_attn = Attn(cfg.d_model, cfg.encoder_attention_heads)
+            self.self_attn = _Attn(cfg.d_model, cfg.encoder_attention_heads)
             self.self_attn_layer_norm = nn.LayerNorm(cfg.d_model)
             self.fc1 = nn.Linear(cfg.d_model, cfg.encoder_ffn_dim)
             self.fc2 = nn.Linear(cfg.encoder_ffn_dim, cfg.d_model)
@@ -71,12 +71,12 @@ class Encoder(nn.Module):
             return x
 
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__()
         self.conv1 = nn.Conv1D(cfg.num_mel_bins, cfg.d_model, 3, padding=1)
         self.conv2 = nn.Conv1D(cfg.d_model, cfg.d_model, 3, stride=2, padding=1)
         self.embed_positions = nn.Embedding(cfg.max_source_positions, cfg.d_model)
-        self.layers = nn.ModuleList([self.Layer(cfg) for _ in range(cfg.encoder_layers)])
+        self.layers = nn.ModuleList([self._Layer(cfg) for _ in range(cfg.encoder_layers)])
         self.layer_norm = nn.LayerNorm(cfg.d_model)
 
     def forward(self, mel: Tensor) -> Tensor:
@@ -89,14 +89,14 @@ class Encoder(nn.Module):
         return self.layer_norm(x)
 
 
-class Decoder(nn.Module):
-    class Layer(nn.Module):
+class _Decoder(nn.Module):
+    class _Layer(nn.Module):
         @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
-        def __init__(self, cfg: Config) -> None:
+        def __init__(self, cfg: WhisperConfig) -> None:
             super().__init__()
-            self.self_attn = Attn(cfg.d_model, cfg.decoder_attention_heads)
+            self.self_attn = _Attn(cfg.d_model, cfg.decoder_attention_heads)
             self.self_attn_layer_norm = nn.LayerNorm(cfg.d_model)
-            self.encoder_attn = Attn(cfg.d_model, cfg.decoder_attention_heads)
+            self.encoder_attn = _Attn(cfg.d_model, cfg.decoder_attention_heads)
             self.encoder_attn_layer_norm = nn.LayerNorm(cfg.d_model)
             self.fc1 = nn.Linear(cfg.d_model, cfg.decoder_ffn_dim)
             self.fc2 = nn.Linear(cfg.decoder_ffn_dim, cfg.d_model)
@@ -111,12 +111,12 @@ class Decoder(nn.Module):
             return x
 
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__()
         self.cfg = cfg
         self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.d_model)
         self.embed_positions = nn.Embedding(cfg.max_target_positions, cfg.d_model)
-        self.layers = nn.ModuleList([self.Layer(cfg) for _ in range(cfg.decoder_layers)])
+        self.layers = nn.ModuleList([self._Layer(cfg) for _ in range(cfg.decoder_layers)])
         self.layer_norm = nn.LayerNorm(cfg.d_model)
         self.caches: list[KVLayerCache] = []
         self.cross_kv: list[tuple[Tensor, Tensor]] = []
@@ -140,11 +140,11 @@ class Decoder(nn.Module):
 
 
 class WhisperModel(ModelBase):
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__(cfg, is_trainable=False)
         self.cfg = cfg
-        self.encoder = Encoder(cfg)
-        self.decoder = Decoder(cfg)
+        self.encoder = _Encoder(cfg)
+        self.decoder = _Decoder(cfg)
 
     @staticmethod
     def from_snapshot(file: Path) -> tuple[dict[str, Tensor], WhisperModel]:
@@ -152,7 +152,7 @@ class WhisperModel(ModelBase):
         if meta.get('arch') != 'whisper':
             raise RuntimeError(f'{file} holds a {meta.get("arch") or "nameless"} model, not whisper')
         context.set_default_dtype(getattr(dtype, meta['dtype']))
-        model = WhisperModel(ConfigBase.decode(Config, meta['mod_cfg']))
+        model = WhisperModel(ConfigBase.decode(WhisperConfig, meta['mod_cfg']))
         model.load_tensors(tensors, meta)
         return tensors, model
 

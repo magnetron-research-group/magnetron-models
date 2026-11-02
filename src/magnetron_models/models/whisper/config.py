@@ -14,7 +14,7 @@ from magnetron_models.common import ConfigBase
 
 
 @dataclass
-class Config(ConfigBase):
+class WhisperConfig(ConfigBase):
     repo_id: str = 'openai/whisper-base'
     vocab_size: int = 51865
     num_mel_bins: int = 80
