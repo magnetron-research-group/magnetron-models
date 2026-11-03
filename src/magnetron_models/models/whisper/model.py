@@ -17,7 +17,6 @@ from magnetron_models.kvcache import KVLayerCache
 
 
 class _Attn(nn.Module):
-    @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, d_model: int, heads: int) -> None:
         super().__init__()
         self.heads = heads
@@ -53,7 +52,6 @@ class _Attn(nn.Module):
 
 class _Encoder(nn.Module):
     class _Layer(nn.Module):
-        @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
         def __init__(self, cfg: WhisperConfig) -> None:
             super().__init__()
             self.cfg = cfg
@@ -68,7 +66,6 @@ class _Encoder(nn.Module):
             x = x + self.fc2(self.fc1(self.final_layer_norm(x)).gelu())
             return x
 
-    @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__()
         self.conv1 = nn.Conv1D(cfg.num_mel_bins, cfg.d_model, 3, padding=1)
@@ -89,7 +86,6 @@ class _Encoder(nn.Module):
 
 class _Decoder(nn.Module):
     class _Layer(nn.Module):
-        @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
         def __init__(self, cfg: WhisperConfig) -> None:
             super().__init__()
             self.self_attn = _Attn(cfg.d_model, cfg.decoder_attention_heads)
@@ -108,7 +104,6 @@ class _Decoder(nn.Module):
             x = x + self.fc2(self.fc1(self.final_layer_norm(x)).gelu())
             return x
 
-    @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__()
         self.cfg = cfg
@@ -140,10 +135,11 @@ class _Decoder(nn.Module):
 class WhisperModel(ModelBase):
     arch = 'whisper'
     config_cls = WhisperConfig
+    cfg: WhisperConfig
 
+    @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: WhisperConfig) -> None:
         super().__init__(cfg, is_trainable=False)
-        self.cfg = cfg
         self.encoder = _Encoder(cfg)
         self.decoder = _Decoder(cfg)
 

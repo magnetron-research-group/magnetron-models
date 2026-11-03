@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import fields
 from pathlib import Path
-from typing import get_type_hints, get_args, get_origin, Any, Callable, ClassVar, Self
+from typing import get_type_hints, get_args, get_origin, Any, ClassVar, Self
 from enum import Enum
 from magnetron import nn, context, Tensor, dtype
 from magnetron.snapshot import deserialize
@@ -21,7 +21,7 @@ import gc
 
 class ConfigBase(ABC):
     @staticmethod
-    def decode(config_cls: Callable[..., Any], data: dict[str, Any]) -> object:
+    def decode[C](config_cls: type[C], data: dict[str, Any]) -> C:
         hints = get_type_hints(config_cls)
 
         def _decode_inner(hint: object, value: object) -> object:

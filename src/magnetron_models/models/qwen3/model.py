@@ -19,53 +19,43 @@ from magnetron_models.models.rope import apply_rope, precompute_freq_cache
 
 
 class _Attn(nn.Module):
-    @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: Qwen3Config) -> None:
         super().__init__()
-        self.hdim: int = cfg.head_dim
-        self.nheads: int = cfg.num_attention_heads
-        self.nkv = cfg.num_key_value_heads
-        self.nrep: int = self.nheads // self.nkv
-        self.q_proj = nn.Linear(cfg.hidden_size, self.nheads * self.hdim, bias=False)
-        self.k_proj = nn.Linear(cfg.hidden_size, self.nkv * self.hdim, bias=False)
-        self.v_proj = nn.Linear(cfg.hidden_size, self.nkv * self.hdim, bias=False)
-        self.o_proj = nn.Linear(self.nheads * self.hdim, cfg.hidden_size, bias=False)
-        self.q_norm = nn.RMSNorm(self.hdim, eps=cfg.rms_norm_eps)
-        self.k_norm = nn.RMSNorm(self.hdim, eps=cfg.rms_norm_eps)
+        H, self.nh, self.nkv, self.hd = cfg.hidden_size, cfg.num_attention_heads, cfg.num_key_value_heads, cfg.head_dim
+        self.q_proj = nn.Linear(H, self.nh * self.hd, bias=False)
+        self.k_proj = nn.Linear(H, self.nkv * self.hd, bias=False)
+        self.v_proj = nn.Linear(H, self.nkv * self.hd, bias=False)
+        self.o_proj = nn.Linear(self.nh * self.hd, H, bias=False)
+        self.q_norm = nn.RMSNorm(self.hd, eps=cfg.rms_norm_eps)
+        self.k_norm = nn.RMSNorm(self.hd, eps=cfg.rms_norm_eps)
 
-    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
+    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache | None = None) -> Tensor:
         B, T, _ = x.shape
-        ck = self.k_norm(self.k_proj(x).reshape(B, T, self.nkv, self.hdim).transpose(1, 2))
-        cv = self.v_proj(x).reshape(B, T, self.nkv, self.hdim).transpose(1, 2)
-        q = self.q_norm(self.q_proj(x).reshape(B, T, self.nheads, self.hdim).transpose(1, 2))
-        q, ck = apply_rope(q, ck, cfreq, sfreq, idx)
-        k, v = cache.append(ck, cv) if cache is not None else (ck, cv)
-        qg = q.reshape(B, self.nkv, self.nrep, T, self.hdim)
-        scores = (Tensor.einsum('BKGTD,BKSD->BKGTS', qg, k) * (1.0 / math.sqrt(self.hdim))).cast(dtype.float32)
-        ql, kl = q.shape[2], k.shape[2]
-        if ql > 1:
-            kpi = Tensor.arange(kl).reshape(1, -1)
-            qpi = Tensor.arange(start=(kl - ql), stop=kl).reshape(-1, 1)
-            scores = scores + Tensor.where(kpi <= qpi, 0.0, float('-inf')).cast(dtype.float32).reshape(1, 1, 1, ql, kl)
-        out = Tensor.einsum('BKGTS,BKSD->BKGTD', scores.softmax(dim=-1).cast(v.dtype), v)
-        return self.o_proj(out.reshape(B, self.nheads, T, self.hdim).transpose(1, 2).reshape(B, T, -1))
+        heads = lambda t, n: t.reshape(B, T, n, self.hd).transpose(1, 2)
+        q = apply_rope(self.q_norm(heads(self.q_proj(x), self.nh)), cfreq, sfreq)
+        k = apply_rope(self.k_norm(heads(self.k_proj(x), self.nkv)), cfreq, sfreq)
+        k, v = cache.append(k, heads(self.v_proj(x), self.nkv))
+        S = k.shape[2]
+        s = (Tensor.einsum('BKGTD,BKSD->BKGTS', q.reshape(B, self.nkv, -1, T, self.hd), k) * self.hd**-0.5).cast(dtype.float32)
+        if T > 1:
+            mask = Tensor.arange(S).reshape(1, -1) <= Tensor.arange(S - T, S).reshape(-1, 1)
+            s = s + Tensor.where(mask, 0.0, float('-inf')).cast(dtype.float32)
+        o = Tensor.einsum('BKGTS,BKSD->BKGTD', s.softmax(dim=-1).cast(v.dtype), v)
+        return self.o_proj(o.reshape(B, self.nh, T, self.hd).transpose(1, 2).reshape(B, T, -1))
 
 
 class _Block(nn.Module):
     class _MLP(nn.Module):
-        @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
         def __init__(self, cfg: Qwen3Config) -> None:
             super().__init__()
-            self.hidden_size: int = cfg.hidden_size
-            self.inter_size: int = cfg.intermediate_size
-            self.gate_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False)
-            self.up_proj = nn.Linear(self.hidden_size, self.inter_size, bias=False)
-            self.down_proj = nn.Linear(self.inter_size, self.hidden_size, bias=False)
+            H, I = cfg.hidden_size, cfg.intermediate_size
+            self.gate_proj = nn.Linear(H, I, bias=False)
+            self.up_proj = nn.Linear(H, I, bias=False)
+            self.down_proj = nn.Linear(I, H, bias=False)
 
         def forward(self, x: Tensor) -> Tensor:
             return self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
 
-    @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: Qwen3Config) -> None:
         super().__init__()
         self.self_attn = _Attn(cfg)
@@ -73,10 +63,10 @@ class _Block(nn.Module):
         self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)
 
-    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, idx: Tensor, cache: KVLayerCache | None = None) -> Tensor:
-        h = x + self.self_attn(self.input_layernorm(x), cfreq, sfreq, idx, cache)
-        h = h + self.mlp(self.post_attention_layernorm(h))
-        return h
+    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache | None = None) -> Tensor:
+        x = x + self.self_attn(self.input_layernorm(x), cfreq, sfreq, cache)
+        x = x + self.mlp(self.post_attention_layernorm(x))
+        return x
 
 
 class Qwen3Model(ModelBase):
@@ -96,10 +86,11 @@ class Qwen3Model(ModelBase):
         self.rope_cache: tuple[Tensor, Tensor] = precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.kv_cache = KVCache(cfg.num_key_value_heads, cfg.num_hidden_layers, cfg.max_position_embeddings, cfg.head_dim)
 
-    def forward(self, x: Tensor, idx: Tensor) -> Tensor:  # (B,T) ids -> (B,1,V) logits of the last position only
+    def forward(self, x: Tensor) -> Tensor:  # (B,T) ids -> (B,1,V) logits of the last position only
+        p, T = self.kv_cache.pos, x.shape[1]
+        cfreq, sfreq = self.rope_cache[0][p : p + T], self.rope_cache[1][p : p + T]
         h = self.embed_tokens(x)
-        ccos, csin = self.rope_cache
-        for i, l in enumerate(self.layers):
-            h = l(h, ccos, csin, idx, self.kv_cache[i])
+        for layer, cache in zip(self.layers, self.kv_cache.layers):
+            h = layer(h, cfreq, sfreq, cache)
         h = self.norm(h[:, -1:])
-        return Tensor.einsum('...H,VH->...V', h, self.embed_tokens.weight) if self.cfg.tie_word_embeddings else self.lm_head(h)
+        return self.lm_head(h) if self.lm_head is not None else Tensor.einsum('...H,VH->...V', h, self.embed_tokens.weight)

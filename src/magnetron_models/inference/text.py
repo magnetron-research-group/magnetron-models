@@ -13,7 +13,7 @@ from abc import abstractmethod
 from typing import Any, override, Generator, Iterator, Protocol
 from magnetron import no_grad, Tensor, dtype
 from magnetron_models.inference import InferenceAdapter
-from magnetron_models.inference.adapters import TextRequest, TextChunk, TextResponse, StopReason
+from magnetron_models.inference.adapters import TextRequest, TextChunk, TextResponse, StopReason, collect_text
 from magnetron_models.kvcache import KVCache
 
 
@@ -40,7 +40,7 @@ class IncrementalDecoder:
 class CausalLM(Protocol):
     kv_cache: KVCache
 
-    def __call__(self, x: Tensor, idx: Tensor) -> Tensor: ...  # (1,T) ids -> (1,1,V) logits of the last position
+    def __call__(self, x: Tensor) -> Tensor: ...  # (1,T) ids continuning KV cache -> (1,1,V) logits of the last position
 
 
 class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
@@ -75,13 +75,13 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
         T = ids.shape[1]
         if T > cap:
             raise ValueError(f'Prompt has {T} tokens but the KV cache only holds {cap}')
-        logits = self.model(ids, Tensor.arange(T).reshape(1, -1))
+        logits = self.model(ids)
         tok = self._sample(logits[0, -1], req.temp, req.topk)
         for i in range(req.max_toks):
             pos = T + i
             last = i + 1 == req.max_toks or pos >= cap
             if not last:  # Async device: enqueue step i+1 before reading token i so the device works while we detokenize
-                logits = self.model(tok.reshape(1, 1), Tensor([[pos]], dtype=dtype.int64))
+                logits = self.model(tok.reshape(1, 1))
                 nxt = self._sample(logits[0, -1], req.temp, req.topk)
             tid = int(tok.item())
             if tid in self.stop_ids:
@@ -116,13 +116,4 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
 
     @override
     def collect_stream(self, req: TextRequest, chunks: Iterator[TextChunk]) -> TextResponse:
-        text: list[str] = []
-        toks: list[int] = []
-        reason = StopReason.STOP
-        for chunk in chunks:
-            text.append(chunk.delta)
-            if chunk.token is not None:
-                toks.append(chunk.token)
-            if chunk.stop_reason is not None:
-                reason = chunk.stop_reason
-        return TextResponse(text=''.join(text), tokens=toks, stop_reason=reason)
+        return collect_text(chunks)

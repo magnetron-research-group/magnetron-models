@@ -9,11 +9,10 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Iterator, override
-from magnetron import Tensor, dtype
+from magnetron import Tensor
 from enum import Enum
 from magnetron_models.inference import InferenceAdapter
 
@@ -100,16 +99,23 @@ class ImageChunk:
     preview: ImageResponse | None = None
 
 
+def collect_text(chunks: Iterable[TextChunk]) -> TextResponse:
+    text: list[str] = []
+    toks: list[int] = []
+    reason = StopReason.STOP
+    for chunk in chunks:
+        text.append(chunk.delta)
+        if chunk.token is not None:
+            toks.append(chunk.token)
+        if chunk.stop_reason is not None:
+            reason = chunk.stop_reason
+    return TextResponse(text=''.join(text), tokens=toks, stop_reason=reason)
+
+
 class TranscribeAdapter(InferenceAdapter[TranscribeRequest, TextResponse, TranscribeChunk]):
     @override
-    def collect_stream(self, req: TranscribeRequest, chunks: Iterator[TextChunk]) -> TextResponse:
-        text: list[str] = []
-        toks: list[int] = []
-        for chunk in chunks:
-            text.append(chunk.delta)
-            if chunk.token is not None:
-                toks.append(chunk.token)
-        return TextResponse(text=''.join(text), tokens=toks)
+    def collect_stream(self, req: TranscribeRequest, chunks: Iterator[TranscribeChunk]) -> TextResponse:
+        return collect_text(chunks)
 
 
 class ImageGenAdapter(InferenceAdapter[ImageRequest, ImageResponse, ImageChunk]):
