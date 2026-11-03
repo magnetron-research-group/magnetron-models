@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import math
-
 from magnetron import Tensor, nn, dtype
 from magnetron_models.common import ModelBase
 from magnetron_models.kvcache import KVLayerCache, KVCache
