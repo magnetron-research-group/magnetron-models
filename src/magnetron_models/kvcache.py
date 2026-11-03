@@ -9,13 +9,14 @@
 
 from __future__ import annotations
 
-from magnetron import Tensor
+from magnetron import Tensor, context, dtype as _dtype
 
 
 class KVLayerCache:
-    def __init__(self, batch_size: int, num_kv_heads: int, max_seq_len: int, head_dim: int) -> None:
-        self.k: Tensor = Tensor.zeros(batch_size, num_kv_heads, max_seq_len, head_dim)
-        self.v: Tensor = Tensor.zeros(batch_size, num_kv_heads, max_seq_len, head_dim)
+    def __init__(self, batch_size: int, num_kv_heads: int, max_seq_len: int, head_dim: int, dtype: _dtype.DType | None = None) -> None:
+        dtype = dtype or context.get_default_dtype()
+        self.k: Tensor = Tensor.zeros(batch_size, num_kv_heads, max_seq_len, head_dim, dtype=dtype)
+        self.v: Tensor = Tensor.zeros(batch_size, num_kv_heads, max_seq_len, head_dim, dtype=dtype)
         self.pos: int = 0
 
     def append(self, curr_k: Tensor, curr_v: Tensor, sliding_window: int | None = None) -> tuple[Tensor, Tensor]:
@@ -37,10 +38,17 @@ class KVLayerCache:
 
 
 class KVCache:
-    def __init__(self, num_key_value_heads: int, num_hidden_layers: int, max_seq_len: int, head_dim: int, batch_size: int = 1) -> None:
+    def __init__(
+        self,
+        num_key_value_heads: int,
+        num_hidden_layers: int,
+        max_seq_len: int,
+        head_dim: int,
+        batch_size: int = 1,
+        dtype: _dtype.DType | None = None,
+    ) -> None:
         self.layers: list[KVLayerCache] = [
-            KVLayerCache(batch_size=batch_size, num_kv_heads=num_key_value_heads, max_seq_len=max_seq_len, head_dim=head_dim)
-            for _ in range(num_hidden_layers)
+            KVLayerCache(batch_size, num_key_value_heads, max_seq_len, head_dim, dtype) for _ in range(num_hidden_layers)
         ]
 
     def __getitem__(self, idx: int) -> KVLayerCache:

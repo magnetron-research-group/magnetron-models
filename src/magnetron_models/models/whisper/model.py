@@ -111,16 +111,14 @@ class _Decoder(nn.Module):
         self.embed_positions = nn.Embedding(cfg.max_target_positions, cfg.d_model)
         self.layers = nn.ModuleList([self._Layer(cfg) for _ in range(cfg.decoder_layers)])
         self.layer_norm = nn.LayerNorm(cfg.d_model)
-        self.caches: KVCache | None = None
+        self.caches = KVCache(cfg.decoder_attention_heads, len(self.layers), cfg.max_target_positions, cfg.d_model // cfg.decoder_attention_heads)
         self.cross_kv: list[tuple[Tensor, Tensor]] = []
 
     def reset(self, out_encoder: Tensor) -> None:
-        head_dim = self.cfg.d_model // self.cfg.decoder_attention_heads
-        self.caches = KVCache(self.cfg.decoder_attention_heads, len(self.layers), self.cfg.max_target_positions, head_dim)
+        self.caches.clear()
         self.cross_kv = [layer.encoder_attn.project_kv(out_encoder) for layer in self.layers]
 
     def forward(self, tokens: Tensor) -> Tensor:
-        assert self.caches is not None, 'call reset() before decoding'
         pos = self.caches.pos
         x = self.embed_tokens(tokens) + self.embed_positions.weight[pos : pos + tokens.shape[1]]
         for layer, cache, cross_kv in zip(self.layers, self.caches.layers, self.cross_kv, strict=True):

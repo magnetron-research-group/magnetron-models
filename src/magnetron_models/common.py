@@ -74,14 +74,19 @@ class ModelBase(SnapshotModule, ABC):
         tensors, meta = deserialize(file)
         if meta.get('arch') != cls.arch:
             raise RuntimeError(f'{file} holds a {meta.get("arch") or "nameless"} model, not {cls.arch}')
+        prev_dtype = context.get_default_dtype()
         context.set_default_dtype(getattr(dtype, meta['dtype']))
-        model = cls(ConfigBase.decode(cls.config_cls, meta['mod_cfg']))
+        try:
+            model = cls(ConfigBase.decode(cls.config_cls, meta['mod_cfg']))
+        finally:
+            context.set_default_dtype(prev_dtype)
         model.load_tensors(tensors, meta)
         return tensors, model
 
     def __init__(self, cfg: ConfigBase, is_trainable: bool) -> None:
         super().__init__()
         self.cfg = cfg
+        self.dtype: dtype.DType = context.get_default_dtype()
         self._is_trainable = is_trainable
 
     @property

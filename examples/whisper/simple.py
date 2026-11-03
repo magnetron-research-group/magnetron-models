@@ -27,6 +27,8 @@ chunk: TranscribeChunk
 for chunk in whisper.stream(request):
     print(chunk.delta, end='', flush=True)
 
+print()
+
 # Blocking all at once
 print(whisper.generate_blocking(request).text)
 

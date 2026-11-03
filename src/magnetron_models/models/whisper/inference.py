@@ -14,7 +14,7 @@ from typing import Iterable, Any, override
 from collections.abc import Iterator
 from pathlib import Path
 from dataclasses import dataclass, field
-from magnetron import Tensor, context, dtype, no_grad
+from magnetron import Tensor, dtype, no_grad
 from magnetron_models.inference import register_inference_adapter
 from magnetron_models.inference.adapters import TranscribeAdapter, TranscribeRequest, TextChunk, TranscribeChunk
 from magnetron_models.inference.text import IncrementalDecoder
@@ -95,7 +95,7 @@ class WhisperInferenceAdapter(TranscribeAdapter):
         return [*prev, self.sot, self.lang2id[sess.lang], self.task_to_id[req.task.value], self.no_timestamps]
 
     def _encode(self, win: Tensor) -> Tensor:
-        mel = self.mel(win).cast(context.get_default_dtype())
+        mel = self.mel(win).cast(self.model.dtype)
         return self.model.encoder(mel.reshape(1, *mel.shape))
 
     def _decode(self, enc: Tensor, prompt: list[int], max_toks: int) -> Iterator[int]:
@@ -124,4 +124,4 @@ class WhisperInferenceAdapter(TranscribeAdapter):
     def _bias(self, token_ids: list[int]) -> Tensor:
         vocab = self.model.cfg.vocab_size
         mask = Tensor(token_ids, dtype=dtype.int64).bincount(minlength=vocab) > 0
-        return Tensor.zeros(vocab, dtype=context.get_default_dtype()).masked_fill(mask, float('-inf'))
+        return Tensor.zeros(vocab, dtype=self.model.dtype).masked_fill(mask, float('-inf'))
