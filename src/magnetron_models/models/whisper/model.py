@@ -13,7 +13,7 @@ import math
 from magnetron_models.models.whisper.config import WhisperConfig
 from magnetron import Tensor, nn, dtype
 from magnetron_models.common import ModelBase
-from magnetron_models.kvcache import KVLayerCache
+from magnetron_models.kvcache import KVCache, KVLayerCache
 
 
 class _Attn(nn.Module):
@@ -111,22 +111,19 @@ class _Decoder(nn.Module):
         self.embed_positions = nn.Embedding(cfg.max_target_positions, cfg.d_model)
         self.layers = nn.ModuleList([self._Layer(cfg) for _ in range(cfg.decoder_layers)])
         self.layer_norm = nn.LayerNorm(cfg.d_model)
-        self.caches: list[KVLayerCache] = []
+        self.caches: KVCache | None = None
         self.cross_kv: list[tuple[Tensor, Tensor]] = []
 
     def reset(self, out_encoder: Tensor) -> None:
         head_dim = self.cfg.d_model // self.cfg.decoder_attention_heads
-        self.caches = [KVLayerCache(1, self.cfg.decoder_attention_heads, self.cfg.max_target_positions, head_dim) for _ in self.layers]
+        self.caches = KVCache(self.cfg.decoder_attention_heads, len(self.layers), self.cfg.max_target_positions, head_dim)
         self.cross_kv = [layer.encoder_attn.project_kv(out_encoder) for layer in self.layers]
 
-    @property
-    def pos(self) -> int:
-        return self.caches[0].pos
-
     def forward(self, tokens: Tensor) -> Tensor:
-        pos = self.pos
+        assert self.caches is not None, 'call reset() before decoding'
+        pos = self.caches.pos
         x = self.embed_tokens(tokens) + self.embed_positions.weight[pos : pos + tokens.shape[1]]
-        for layer, cache, cross_kv in zip(self.layers, self.caches, self.cross_kv, strict=True):
+        for layer, cache, cross_kv in zip(self.layers, self.caches.layers, self.cross_kv, strict=True):
             x = layer(x, cache, cross_kv)
         x = self.layer_norm(x[:, -1, :])
         return (x @ self.embed_tokens.weight.T).reshape(-1)
