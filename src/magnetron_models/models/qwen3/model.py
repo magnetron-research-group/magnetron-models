@@ -84,7 +84,7 @@ class Qwen3Model(ModelBase):
         self.rope_cache: tuple[Tensor, Tensor] = precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.kv_cache = KVCache(cfg.num_key_value_heads, cfg.num_hidden_layers, cfg.max_position_embeddings, cfg.head_dim)
 
-    def forward(self, x: Tensor) -> Tensor:  # (B,T) ids -> (B,1,V) logits of the last position only
+    def forward(self, x: Tensor) -> Tensor:
         p, T = self.kv_cache.pos, x.shape[1]
         cfreq, sfreq = self.rope_cache[0][p : p + T], self.rope_cache[1][p : p + T]
         h = self.embed_tokens(x)
