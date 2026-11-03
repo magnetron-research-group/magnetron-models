@@ -40,7 +40,7 @@ class IncrementalDecoder:
 class CausalLM(Protocol):
     kv_cache: KVCache
 
-    def __call__(self, x: Tensor) -> Tensor: ...  # (1,T) ids continuning KV cache -> (1,1,V) logits of the last position
+    def __call__(self, x: Tensor) -> Tensor: ...  # (1,T) ids continuing KV cache -> (1,1,V) logits of the last position
 
 
 class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):

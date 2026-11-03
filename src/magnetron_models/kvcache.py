@@ -42,7 +42,6 @@ class KVCache:
             KVLayerCache(batch_size=batch_size, num_kv_heads=num_key_value_heads, max_seq_len=max_seq_len, head_dim=head_dim)
             for _ in range(num_hidden_layers)
         ]
-        assert all(layer.pos == self.pos for layer in self.layers)
 
     def __getitem__(self, idx: int) -> KVLayerCache:
         return self.layers[idx]

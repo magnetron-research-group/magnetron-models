@@ -27,7 +27,7 @@ class _Attn(nn.Module):
         self.q_norm = nn.RMSNorm(self.hd, eps=cfg.rms_norm_eps)
         self.k_norm = nn.RMSNorm(self.hd, eps=cfg.rms_norm_eps)
 
-    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache | None = None) -> Tensor:
+    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache) -> Tensor:
         B, T, _ = x.shape
         heads = lambda t, n: t.reshape(B, T, n, self.hd).transpose(1, 2)
         q = apply_rope(self.q_norm(heads(self.q_proj(x), self.nh)), cfreq, sfreq)
@@ -61,7 +61,7 @@ class _Block(nn.Module):
         self.input_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)
         self.post_attention_layernorm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)
 
-    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache | None = None) -> Tensor:
+    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache) -> Tensor:
         x = x + self.self_attn(self.input_layernorm(x), cfreq, sfreq, cache)
         x = x + self.mlp(self.post_attention_layernorm(x))
         return x
@@ -74,7 +74,6 @@ class Qwen3Model(ModelBase):
     @nn.layer_init(weight=nn.init.EmptyInitStrategy(), bias=nn.init.EmptyInitStrategy())
     def __init__(self, cfg: Qwen3Config) -> None:
         super().__init__(cfg, is_trainable=False)
-        self.cfg = cfg
         self.embed_tokens = nn.Embedding(cfg.vocab_size, cfg.hidden_size)
         self.layers = nn.ModuleList([_Block(cfg) for _ in range(cfg.num_hidden_layers)])
         self.norm = nn.RMSNorm(cfg.hidden_size, eps=cfg.rms_norm_eps)

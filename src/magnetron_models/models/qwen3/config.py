@@ -29,4 +29,3 @@ class Qwen3Config(ConfigBase):
     rope_theta: float = 5_000_000.0
     bos_token_id: int = 151643
     eos_token_id: int = 151645
-    topk: int = 0  # 0 = greedy sampling
