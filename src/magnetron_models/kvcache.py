@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from magnetron import Tensor, context, dtype as _dtype
+from magnetron_models.common import ConfigBase
 
 
 class KVLayerCache:
