@@ -184,7 +184,7 @@ class GatedDeltaNet(nn.Module):
         return self.out_proj(attn.reshape(B, T, -1))
 
 
-class GatedAttention(nn.Module):
+class GatedAttn(nn.Module):
     def __init__(self, cfg: Qwen3HybConfig) -> None:
         super().__init__()
         self.hd: int = cfg.head_dim
