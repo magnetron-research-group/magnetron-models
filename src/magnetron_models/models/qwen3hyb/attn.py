@@ -9,9 +9,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from magnetron import dtype, Tensor, nn
+
+from magnetron_models.kvcache import KVLayerCache
 from magnetron_models.models.qwen3hyb.kvcache import LinearLayerCache
 from magnetron_models.models.qwen3hyb.config import Qwen3HybConfig
+from magnetron_models.models.rope import apply_rope
 
 
 def _unit_lower_inv(x: Tensor) -> Tensor:
@@ -31,7 +36,7 @@ def _unit_lower_inv(x: Tensor) -> Tensor:
 
 
 def _l2norm(x: Tensor, dim: int = -1, eps: float = 1e-6) -> Tensor:
-    return x * (x.sqr().sum(dim=dim, keepdim=True) + eps).rqsrt()
+    return x * (x.sqr().sum(dim=dim, keepdim=True) + eps).rsqrt()
 
 
 def _softplus(x: Tensor) -> Tensor:
@@ -57,14 +62,14 @@ class GatedDeltaNet(nn.Module):
             k = _l2norm(k, dim=-1, eps=1e-6)
         q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
         batch, nhead, seq, khead = k.shape
-        vhead = v.shape[-1]
-        chunk = min(chunk, seq)
-        pad = (chunk - seq % chunk) % chunk
+        vhead: int = v.shape[-1]
+        chunk: int = min(chunk, seq)
+        pad: int = (chunk - seq % chunk) % chunk
         q = q.pad((0, 0, 0, pad))
         k = k.pad((0, 0, 0, pad))
         v = v.pad((0, 0, 0, pad))
         g = g.pad((0, pad))
-        seq_tot = seq + pad
+        seq_tot: int = seq + pad
         q = q * (1 / (q.shape[-1] ** 0.5))
         vb = v * b[..., None]
         kb = k * b[..., None]
@@ -75,7 +80,7 @@ class GatedDeltaNet(nn.Module):
         attn = _unit_lower_inv(-((kb @ k.transpose(-1, -2)) * decay_mask).masked_fill(mask, 0))
         v = attn @ vb
         kcd = attn @ (kb * g.exp()[..., None])
-        rec_state: Tensor | None = Tensor.zeros(batch, khead, vhead, dtype=v.dtype) if state is None else state.cast(v.dtype)
+        rec_state: Tensor | None = Tensor.zeros(batch, nhead, khead, vhead, dtype=v.dtype) if state is None else state.cast(v.dtype)
         out: list[Tensor] = []
         for i in range(0, seq_tot // chunk):
             qi, ki, vi = q[:, :, i], k[:, :, i], v[:, :, i]
@@ -101,10 +106,10 @@ class GatedDeltaNet(nn.Module):
             k = _l2norm(k, dim=-1, eps=1e-6)
         q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
         batch, nhead, seq, khead = k.shape
-        vhead = v.shape[-1]
+        vhead: int = v.shape[-1]
         q = q * (1 / (q.shape[-1] ** 0.5))
         if state is None:
-            state = Tensor.zeros(batch, nhead, seq, khead, vhead, dtype=dtype.float32)
+            state = Tensor.zeros(batch, nhead, khead, vhead, dtype=dtype.float32)
         else:
             state = state if state.dtype == dtype.float32 else state.cast(dtype.float32)
         out: list[Tensor] = []
@@ -124,35 +129,33 @@ class GatedDeltaNet(nn.Module):
 
     def __init__(self, cfg: Qwen3HybConfig) -> None:
         super().__init__()
-        self.cfg = cfg
-        self.nkh = cfg.linear_num_key_heads
-        self.nvh = cfg.linear_num_value_heads
-        self.hkd = cfg.linear_key_head_dim
-        self.hvd = cfg.linear_value_head_dim
-        self.kd = cfg.linear_key_dim
-        self.vd = cfg.linear_val_dim
-        self.cv = cfg.linear_conv_dim
-        self.cvks = cfg.linear_conv_kernel_dim
-        self.nrep = self.nvh // self.nvh
+        self.cfg: Qwen3HybConfig = cfg
+        self.nkh: int = cfg.linear_num_key_heads
+        self.nvh: int = cfg.linear_num_value_heads
+        self.hkd: int = cfg.linear_key_head_dim
+        self.hvd: int = cfg.linear_value_head_dim
+        self.kd: int = cfg.linear_key_dim
+        self.vd: int = cfg.linear_val_dim
+        self.cv: int = cfg.linear_conv_dim
+        self.cvks: int = cfg.linear_conv_kernel_dim
+        self.nrep: int = self.nvh // self.nkh
         self.conv1d = nn.Conv1D(self.cv, self.cv, self.cvks, groups=self.cv, bias=False)
         self.dt_bias = nn.Parameter(Tensor.empty(self.nvh, dtype=dtype.float32))
         self.A_log = nn.Parameter(Tensor.empty(self.nvh, dtype=dtype.float32))
         self.norm = nn.RMSNormGated(self.hvd, eps=cfg.rms_norm_eps)
-        self.in_proj_qkv = nn.Linear(cfg.hidden_size, self.cv, bias=False)
-        self.in_proj_z = nn.Linear(cfg.hidden_size, self.vd, bias=False)
-        self.in_proj_b = nn.Linear(cfg.hidden_size, self.nvh, bias=False)
-        self.in_proj_a = nn.Linear(cfg.hidden_size, self.nvh, bias=False)
-        self.out_proj = nn.Linear(self.vd, cfg.hidden_size, bias=False)
+        h: int = cfg.hidden_size
+        self.in_proj_qkv = nn.Linear(h, self.cv, bias=False)
+        self.in_proj_z = nn.Linear(h, self.vd, bias=False)
+        self.in_proj_b = nn.Linear(h, self.nvh, bias=False)
+        self.in_proj_a = nn.Linear(h, self.nvh, bias=False)
+        self.out_proj = nn.Linear(self.vd, h, bias=False)
 
     def _conv(self, mqkv: Tensor, cache: LinearLayerCache | None) -> Tensor:
-        seq = mqkv.shape[-1]
-        kern = self.cvks
-        if cache is not None and cache.is_primed:
-            pad = Tensor.cat([cache.conv.cast(mqkv.cast(mqkv.dtype), mqkv)], dim=-1)
-        else:
-            pad = mqkv.pad((kern - 1, 0))
+        seq: int = mqkv.shape[-1]
+        kern: int = self.cvks
+        pad = Tensor.cat([cache.conv.cast(mqkv.dtype), mqkv], dim=-1) if cache is not None and cache.is_primed else mqkv.pad((kern - 1, 0))
         if cache is not None:
-            state = mqkv if seq >= kern else Tensor.cat([cache.conv.cast(mqkv.cast(mqkv.dtype), mqkv)], dim=-1)
+            state = mqkv if seq >= kern else Tensor.cat([cache.conv.cast(mqkv.dtype), mqkv], dim=-1)
             cache.conv = state[:, :, -kern:].cast(cache.dt)
         return self.conv1d(pad)[:, :, -seq:].silu()
 
@@ -162,7 +165,50 @@ class GatedDeltaNet(nn.Module):
         q = mqkv[:, :, : self.kd].reshape(B, T, -1, self.hkd)
         k = mqkv[:, :, self.kd : (self.kd << 1)].reshape(B, T, -1, self.hkd)
         v = mqkv[:, :, (self.kd << 1) :].reshape(B, T, -1, self.hvd)
-        zp = self.in_proj_z(x).reshape(B, T, -1, self.hvd)
-        beta = self.in_proj_b(x).sigmoid()
+        z = self.in_proj_z(x).reshape(B, T, -1, self.hvd)
+        b = self.in_proj_b(x).sigmoid()
         g = -self.A_log.exp() * _softplus(self.in_proj_a(x).cast(dtype.float32) + self.dt_bias)
-        raise RuntimeError('todo')
+        if self.nrep > 1:
+            q = q.repeat_interleave(self.nrep, dim=2)
+            k = k.repeat_interleave(self.nrep, dim=2)
+        state: Tensor | None = cache.state if cache is not None and cache.is_primed else None
+        chunk_rule = GatedDeltaNet._chunk_gated_delta_rule
+        rec_rule = GatedDeltaNet._recurrent_gated_delta_rule
+        rule = rec_rule if state is not None and T == 1 else chunk_rule
+        kw: dict[str, Any] = {} if rule is rec_rule else {'chunk': self.cfg.delta_chunk_size}
+        attn, pstate = rule(q, k, v, g, b, state=state, use_qk_l2norm=True, out_final_state=cache is not None, **kw)
+        if cache is not None:
+            cache.state = pstate.cast(cache.dt)
+            cache.is_primed = True
+        attn = self.norm(attn.reshape(-1, self.hvd), z.reshape(-1, self.hvd))
+        return self.out_proj(attn.reshape(B, T, -1))
+
+
+class GatedAttention(nn.Module):
+    def __init__(self, cfg: Qwen3HybConfig) -> None:
+        super().__init__()
+        self.hd: int = cfg.head_dim
+        self.nh: int = cfg.num_attention_heads
+        self.nkv: int = cfg.num_key_value_heads
+        h: int = cfg.hidden_size
+        self.q_proj = nn.Linear(h, self.nh * (self.hd << 1), bias=False)
+        self.k_proj = nn.Linear(h, self.nkv * self.hd, bias=False)
+        self.v_proj = nn.Linear(h, self.nkv * self.hd, bias=False)
+        self.o_proj = nn.Linear(self.nh * self.hd, h, bias=False)
+        self.q_norm = nn.RMSNorm(self.hd, eps=cfg.rms_norm_eps, gamma_offset=1.0)
+        self.k_norm = nn.RMSNorm(self.hd, eps=cfg.rms_norm_eps, gamma_offset=1.0)
+
+    def forward(self, x: Tensor, cfreq: Tensor, sfreq: Tensor, cache: KVLayerCache) -> Tensor:
+        B, T, _ = x.shape
+        qg = self.q_proj(x).reshape(B, T, self.nh, self.hd << 1)
+        q = apply_rope(self.q_norm(qg[:, :, :, : self.hd]).transpose(1, 2), cfreq, sfreq)
+        gate = qg[:, :, :, self.hd :].reshape(B, T, -1)
+        k = apply_rope(self.k_norm(self.k_proj(x).reshape(B, T, self.nkv, self.hd)).transpose(1, 2), cfreq, sfreq)
+        k, v = cache.append(k, self.v_proj(x).reshape(B, T, self.nkv, self.hd).transpose(1, 2))
+        S: int = k.shape[2]
+        s = (Tensor.einsum('BKGTD,BKSD->BKGTS', q.reshape(B, self.nkv, -1, T, self.hd), k) * self.hd**-0.5).cast(dtype.float32)
+        if T > 1:
+            mask = Tensor.arange(S).reshape(1, -1) <= Tensor.arange(S - T, S).reshape(-1, 1)
+            s = s + Tensor.where(mask, 0.0, float('-inf')).cast(dtype.float32)
+        o = Tensor.einsum('BKGTS,BKSD->BKGTD', s.softmax(dim=-1).cast(v.dtype), v).reshape(B, self.nh, T, self.hd)
+        return self.o_proj(gate.sigmoid() * o.transpose(1, 2).reshape(B, T, -1))

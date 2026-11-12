@@ -20,8 +20,8 @@ def precompute_freq_cache(dim: int, theta: float, max_seq_len: int) -> tuple[Ten
     return freqs.cos().cast(ddt), freqs.sin().cast(ddt)
 
 
-def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:  # x: (B,H,T,D), cos&sin: (T,R) if R<D = partial rotary
-    R, H = cos.shape[-1], cos.shape[-1] >> 1
+def apply_rope(x: Tensor, cfreq: Tensor, sfreq: Tensor) -> Tensor:  # x: (B,H,T,D), cos&sin: (T,R) if R<D = partial rotary
+    R, H = cfreq.shape[-1], cfreq.shape[-1] >> 1
     r = x[..., :R]
-    r = cos * r + sin * Tensor.cat([-r[..., H:], r[..., :H]], dim=-1)
+    r = cfreq * r + sfreq * Tensor.cat([-r[..., H:], r[..., :H]], dim=-1)
     return r if R == x.shape[-1] else Tensor.cat([r, x[..., R:]], dim=-1)
