@@ -19,8 +19,6 @@ from magnetron_models.models.whisper.audio_processor import SAMPLE_RATE
 from magnetron_models.extra.vad import FRAME_LEN, SpeechBandEnergyVAD, segments
 from magnetron_models.utils import bytes_to_f32_tensor, download_model
 
-HF_REPO_ID = 'mario-sieg/magnetron-whisper'
-HF_MODEL_FILE = 'whisper-base-bf16.mag'
 LANGUAGE: str | None = None  # None = auto detect on first speech
 
 
@@ -38,7 +36,7 @@ def mic_frames(device: int | str | None = None) -> Iterator[Tensor]:
 
 
 def main() -> None:
-    whisper: InferenceAdapter = load(download_model(HF_REPO_ID, HF_MODEL_FILE))
+    whisper: InferenceAdapter = load(download_model('mario-sieg/magnetron-whisper', 'whisper-base-bf16.mag'))
     request = TranscribeRequest(segments(mic_frames(), SpeechBandEnergyVAD()), language=LANGUAGE, condition_on_previous=False)
     print('listening... (ctrl+c to stop)', flush=True)
     seg_start: float | None = None

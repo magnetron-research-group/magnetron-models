@@ -15,11 +15,9 @@ from magnetron_models.utils import download_model
 from magnetron_models.inference import load, InferenceAdapter
 from magnetron_models.inference.adapters import TranscribeRequest, TranscribeChunk
 
-HF_REPO_ID = 'mario-sieg/magnetron-whisper'
-HF_MODEL_FILE = 'whisper-base-bf16.mag'
 SPEECH_FILE = Path(__file__).parent / 'speech.mp3'
 
-whisper: InferenceAdapter = load(download_model(HF_REPO_ID, HF_MODEL_FILE))
+whisper: InferenceAdapter = load(download_model('mario-sieg/magnetron-whisper', 'whisper-base-bf16.mag'))
 request = TranscribeRequest(SPEECH_FILE)
 
 # Streaming token by token

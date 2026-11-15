@@ -9,14 +9,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from magnetron_models.inference import load, InferenceAdapter
 from magnetron_models.inference.adapters import TextRequest, TextChunk
+from magnetron_models.utils import download_model
 
-# TODO: Upload
-SNAPSHOT_FILE = Path('/home/mario/db/qwen3-4b-instruct-2507-bf16.mag')
-
-qwen: InferenceAdapter = load(SNAPSHOT_FILE)
+qwen: InferenceAdapter = load(download_model('mario-sieg/magnetron-qwen3', 'qwen3-4b-instruct-2507-bf16.mag'))
 request = TextRequest(
     prompt=[
         {'role': 'system', 'content': 'You are a helpful assistant.'},
