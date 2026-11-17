@@ -12,6 +12,10 @@ from __future__ import annotations
 from magnetron_models.inference import load, InferenceAdapter
 from magnetron_models.inference.adapters import TextRequest, TextChunk
 from magnetron_models.utils import download_model
+from magnetron import context
+
+if context.is_device_available('cuda:0'):
+    context.set_default_device('cuda:0')
 
 qwen: InferenceAdapter = load(download_model('mario-sieg/magnetron-qwen3', 'qwen3-4b-instruct-2507-bf16.mag'))
 request = TextRequest(

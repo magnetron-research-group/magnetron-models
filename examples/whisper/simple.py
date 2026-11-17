@@ -8,12 +8,14 @@
 # +---------------------------------------------------------------------+
 
 from __future__ import annotations
-
 from pathlib import Path
-
 from magnetron_models.utils import download_model
 from magnetron_models.inference import load, InferenceAdapter
 from magnetron_models.inference.adapters import TranscribeRequest, TranscribeChunk
+from magnetron import context
+
+if context.is_device_available('cuda:0'):
+    context.set_default_device('cuda:0')
 
 SPEECH_FILE = Path(__file__).parent / 'speech.mp3'
 
