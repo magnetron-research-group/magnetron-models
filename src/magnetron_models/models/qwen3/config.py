@@ -26,6 +26,7 @@ class Qwen3Config(ConfigBase):
     max_position_embeddings: int = 8192  # 262144
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = True
+    sliding_window: bool = False
     rope_theta: float = 5_000_000.0
     bos_token_id: int = 151643
     eos_token_id: int = 151645

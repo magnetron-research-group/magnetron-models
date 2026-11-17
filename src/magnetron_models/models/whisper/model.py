@@ -116,7 +116,7 @@ class _Decoder(nn.Module):
 
     def reset(self, out_encoder: Tensor) -> None:
         self.caches.clear()
-        self.cross_kv = [layer.encoder_attn.project_kv(out_encoder) for layer in self.layers]
+        self.cross_kv = [(k.contiguous(), v.contiguous()) for k, v in (layer.encoder_attn.project_kv(out_encoder) for layer in self.layers)]
 
     def forward(self, tokens: Tensor) -> Tensor:
         pos = self.caches.pos
