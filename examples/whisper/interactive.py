@@ -16,7 +16,7 @@ from magnetron import Tensor, context
 from magnetron_models.inference import InferenceAdapter, load
 from magnetron_models.inference.adapters import TranscribeChunk, TranscribeRequest
 from magnetron_models.models.whisper.audio_processor import SAMPLE_RATE
-from magnetron_models.extra.vad import FRAME_LEN, SpeechBandEnergyVAD, segments
+from magnetron_models.utils.vad import FRAME_LEN, SpeechBandEnergyVAD, segments
 from magnetron_models.utils import bytes_to_f32_tensor, download_model
 
 if context.is_device_available('cuda:0'):
