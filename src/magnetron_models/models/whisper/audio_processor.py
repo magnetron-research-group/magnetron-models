@@ -30,8 +30,7 @@ _LOG_STEP = math.log(6.4) / 27.0  # 27 mels per 6.4 times in frequency
 
 def load_audio_and_resample(path: Path) -> Tensor:
     audio, sample_rate = Tensor.load_audio(str(path))
-    audio = audio.mean(dim=0)
-    return audio.resample(sample_rate, SAMPLE_RATE)
+    return audio.mean(dim=0).resample(sample_rate, SAMPLE_RATE)
 
 
 class LogMelSpectogram:
