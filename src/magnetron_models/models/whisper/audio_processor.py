@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from magnetron import Tensor, dtype, context
-from magnetron.utils import dsp
 
 SAMPLE_RATE: int = 16000
 NUM_FFT: int = 400
@@ -32,7 +31,7 @@ _LOG_STEP = math.log(6.4) / 27.0  # 27 mels per 6.4 times in frequency
 def load_audio_and_resample(path: Path) -> Tensor:
     audio, sample_rate = Tensor.load_audio(str(path))
     audio = audio.mean(dim=0)
-    return dsp.resample(audio, sample_rate, SAMPLE_RATE)
+    return audio.resample(sample_rate, SAMPLE_RATE)
 
 
 class LogMelSpectogram:
@@ -45,7 +44,7 @@ class LogMelSpectogram:
         self.samples = samples
         self.n_frames = samples // hop_len
         self.filtersT = mel_filters.cast(dtype.float32).T.contiguous().transfer(context.get_default_device())
-        self.window = dsp.hann_window(n_fft, periodic=True, dtype=dtype.float32, device=context.get_default_device())
+        self.window = Tensor.hann_window(n_fft, periodic=True, dtype=dtype.float32, device=context.get_default_device())
 
     @classmethod
     def from_snapshot(cls, mel_filters: Tensor, pp_cfg: dict[str, Any]) -> LogMelSpectogram:
@@ -57,7 +56,7 @@ class LogMelSpectogram:
             chunk = chunk.pad((0, self.samples - num))
         padded = chunk.pad((self.n_fft // 2, self.n_fft // 2), 'reflect').contiguous()
         frames = padded.strided_view((self.n_frames, self.n_fft), (self.hop_len, 1))
-        re, im = dsp.rfft(frames * self.window)
+        re, im = (frames * self.window).rfft()
         pow = re**2 + im**2
         log_spec = (pow @ self.filtersT).clamp_min(1e-10).log10()
         log_spec = log_spec.max(log_spec.max() - 8)
