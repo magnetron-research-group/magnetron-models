@@ -84,7 +84,7 @@ class Qwen3Model(ModelBase):
         self.kv_cache = KVCache(cfg.num_key_value_heads, cfg.num_hidden_layers, cfg.max_position_embeddings, cfg.head_dim)
 
     @property
-    def max_context_len(self) -> int:
+    def max_context(self) -> int:
         return self.cfg.max_position_embeddings
 
     def reset_state(self) -> None:
