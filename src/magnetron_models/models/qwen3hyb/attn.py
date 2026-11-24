@@ -58,7 +58,7 @@ class GatedDeltaNet(nn.Module):
     ) -> tuple[Tensor, Tensor | None]:
         idt = q.dtype
         q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
-        if use_qk_l2norm:  # Normalize in fp32 like the FLA kernels, bf16 sums of squares lose too much precision
+        if use_qk_l2norm:
             q = _l2norm(q, dim=-1, eps=1e-6)
             k = _l2norm(k, dim=-1, eps=1e-6)
         batch, nhead, seq, khead = k.shape
@@ -154,10 +154,9 @@ class GatedDeltaNet(nn.Module):
     def _conv(self, mqkv: Tensor, cache: LinearLayerCache | None) -> Tensor:
         seq: int = mqkv.shape[-1]
         kern: int = self.cvks
-        pad = Tensor.cat([cache.conv.cast(mqkv.dtype), mqkv], dim=-1) if cache is not None and cache.is_primed else mqkv.pad((kern - 1, 0))
+        pad = Tensor.cat([cache.conv, mqkv], dim=-1) if cache is not None and cache.is_primed else mqkv.pad((kern - 1, 0))
         if cache is not None:
-            state = mqkv if seq >= kern else Tensor.cat([cache.conv.cast(mqkv.dtype), mqkv], dim=-1)
-            cache.conv = state[:, :, -kern:].cast(cache.dt)
+            cache.conv = pad[:, :, -kern:]
         return self.conv1d(pad)[:, :, -seq:].silu()
 
     def forward(self, x: Tensor, cache: LinearLayerCache | None = None) -> Tensor:
