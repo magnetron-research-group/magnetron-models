@@ -7,28 +7,21 @@
 # | License : https://www.apache.org/licenses/LICENSE-2.0               |
 # +---------------------------------------------------------------------+
 
+# Chat with Qwen3 4B Instruct in the terminal, on CUDA if available.
+# Usage: python -m examples.qwen3.inference [--cpu] [path/to/qwen3-4b-instruct-2507-bf16.mag]
+
 from __future__ import annotations
 
-from magnetron_models.inference import load, InferenceAdapter
-from magnetron_models.inference.adapters import TextRequest, TextChunk
+from examples.chat import chat_arg_parser, load_llm, repl, select_device
 from magnetron_models.utils import download_model
-from magnetron import context
 
-if context.is_device_available('cuda:0'):
-    context.set_default_device('cuda:0')
 
-qwen: InferenceAdapter = load(download_model('mario-sieg/magnetron-qwen3', 'qwen3-4b-instruct-2507-bf16.mag'))
-request = TextRequest(
-    prompt=[
-        {'role': 'system', 'content': 'You are a helpful assistant.'},
-        {'role': 'user', 'content': 'Explain in two sentences why the sky is blue.'},
-    ],
-    max_toks=256,
-    temp=0.7,
-    topk=20,
-)
+def main() -> None:
+    args = chat_arg_parser('Chat with Qwen3 4B Instruct').parse_args()
+    select_device(args.cpu)
+    llm = load_llm(args.snapshot or download_model('mario-sieg/magnetron-qwen3', 'qwen3-4b-instruct-2507-bf16.mag'))
+    repl(llm, args)
 
-chunk: TextChunk
-for chunk in qwen.stream(request):
-    print(chunk.delta, end='', flush=True)
-print()
+
+if __name__ == '__main__':
+    main()

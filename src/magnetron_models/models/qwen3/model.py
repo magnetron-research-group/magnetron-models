@@ -83,11 +83,18 @@ class Qwen3Model(ModelBase):
         self.rope_cache: tuple[Tensor, Tensor] = precompute_freq_cache(cfg.head_dim, cfg.rope_theta, cfg.max_position_embeddings)
         self.kv_cache = KVCache(cfg.num_key_value_heads, cfg.num_hidden_layers, cfg.max_position_embeddings, cfg.head_dim)
 
+    @property
+    def max_context_len(self) -> int:
+        return self.cfg.max_position_embeddings
+
+    def reset_state(self) -> None:
+        self.kv_cache.clear()
+
     def forward(self, x: Tensor) -> Tensor:
         p, T = self.kv_cache.pos, x.shape[1]
         cfreq, sfreq = self.rope_cache[0][p : p + T], self.rope_cache[1][p : p + T]
         h = self.embed_tokens(x)
-        for layer, cache in zip(self.layers, self.kv_cache.layers):
+        for layer, cache in zip(self.layers, self.kv_cache.layers, strict=True):
             h = layer(h, cfreq, sfreq, cache)
         h = self.norm(h[:, -1:])
         return self.lm_head(h) if self.lm_head is not None else Tensor.einsum('...H,VH->...V', h, self.embed_tokens.weight)

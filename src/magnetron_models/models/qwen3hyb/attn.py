@@ -57,10 +57,10 @@ class GatedDeltaNet(nn.Module):
         chunk: int = 64,
     ) -> tuple[Tensor, Tensor | None]:
         idt = q.dtype
-        if use_qk_l2norm:
+        q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
+        if use_qk_l2norm:  # Normalize in fp32 like the FLA kernels, bf16 sums of squares lose too much precision
             q = _l2norm(q, dim=-1, eps=1e-6)
             k = _l2norm(k, dim=-1, eps=1e-6)
-        q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
         batch, nhead, seq, khead = k.shape
         vhead: int = v.shape[-1]
         chunk: int = min(chunk, seq)
@@ -68,6 +68,7 @@ class GatedDeltaNet(nn.Module):
         q = q.pad((0, 0, 0, pad))
         k = k.pad((0, 0, 0, pad))
         v = v.pad((0, 0, 0, pad))
+        b = b.pad((0, pad))
         g = g.pad((0, pad))
         seq_tot: int = seq + pad
         q = q * (1 / (q.shape[-1] ** 0.5))
@@ -101,10 +102,10 @@ class GatedDeltaNet(nn.Module):
         q: Tensor, k: Tensor, v: Tensor, g: Tensor, b: Tensor, state: Tensor | None = None, use_qk_l2norm: bool = False, out_final_state: bool = False
     ) -> tuple[Tensor, Tensor | None]:
         idt = q.dtype
+        q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
         if use_qk_l2norm:
             q = _l2norm(q, dim=-1, eps=1e-6)
             k = _l2norm(k, dim=-1, eps=1e-6)
-        q, k, v, b, g = [x.transpose(1, 2).contiguous().cast(dtype.float32) for x in (q, k, v, b, g)]
         batch, nhead, seq, khead = k.shape
         vhead: int = v.shape[-1]
         q = q * (1 / (q.shape[-1] ** 0.5))

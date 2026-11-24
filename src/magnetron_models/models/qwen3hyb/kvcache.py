@@ -15,7 +15,7 @@ from magnetron_models.models.qwen3hyb.config import Qwen3HybConfig, Qwen3HybLaye
 
 
 class LinearLayerCache:
-    def __init__(self, cfg: Qwen3HybConfig, batch_size: int = 1, dt=dtype.float32) -> None:
+    def __init__(self, cfg: Qwen3HybConfig, batch_size: int = 1, dt: dtype.DType = dtype.float32) -> None:
         self.dt = dt
         self.conv = Tensor.zeros(batch_size, cfg.linear_conv_dim, cfg.linear_conv_kernel_dim, dtype=dt)
         self.state = Tensor.zeros(batch_size, cfg.linear_num_value_heads, cfg.linear_key_head_dim, cfg.linear_value_head_dim, dtype=dt)
@@ -24,6 +24,7 @@ class LinearLayerCache:
     def clear(self) -> None:  # TODO: use zero_()
         self.conv = Tensor.zeros(*self.conv.shape, dtype=self.dt)
         self.state = Tensor.zeros(*self.state.shape, dtype=self.dt)
+        self.is_primed = False
 
 
 class HybridCache:
@@ -36,7 +37,7 @@ class HybridCache:
         ]
         self.pos: int = 0
 
-    def __getitem(self, i: int) -> KVLayerCache | LinearLayerCache:
+    def __getitem__(self, i: int) -> KVLayerCache | LinearLayerCache:
         return self.layers[i]
 
     def advance(self, toks: int) -> None:

@@ -14,7 +14,6 @@ from typing import Any, override, Generator, Iterator, Protocol
 from magnetron import no_grad, Tensor, dtype
 from magnetron_models.inference import InferenceAdapter
 from magnetron_models.inference.adapters import TextRequest, TextChunk, TextResponse, StopReason, collect_text
-from magnetron_models.kvcache import KVCache
 
 
 class IncrementalDecoder:
@@ -38,9 +37,12 @@ class IncrementalDecoder:
 
 
 class CausalLM(Protocol):
-    kv_cache: KVCache
+    @property
+    def max_context_len(self) -> int: ...  # Max number of tokens (prompt + gen) the model state can hold
 
-    def __call__(self, x: Tensor) -> Tensor: ...  # (1,T) ids continuing KV cache -> (1,1,V) logits of the last position
+    def reset_state(self) -> None: ...  # Forget all previous tokens
+
+    def __call__(self, x: Tensor) -> Tensor: ...  # (1,T) ids continuing the model state -> (1,1,V) logits of the last position
 
 
 class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
@@ -69,12 +71,11 @@ class TextGenAdapter(InferenceAdapter[TextRequest, TextResponse, TextChunk]):
         return idx.gather(0, vals.softmax(dim=-1).reshape(1, -1).multinomial(num_samples=1).reshape(1))
 
     def _decode_tokens(self, ids: Tensor, req: TextRequest) -> Generator[int, None, StopReason]:
-        cache = self.model.kv_cache
-        cache.clear()
-        cap = cache[0].k.shape[2]
+        self.model.reset_state()
+        cap = self.model.max_context_len
         T = ids.shape[1]
         if T > cap:
-            raise ValueError(f'Prompt has {T} tokens but the KV cache only holds {cap}')
+            raise ValueError(f'Prompt has {T} tokens but the model context only holds {cap}')
         logits = self.model(ids)
         tok = self._sample(logits[0, -1], req.temp, req.topk)
         for i in range(req.max_toks):

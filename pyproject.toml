@@ -27,6 +27,7 @@ inference = [
     "huggingface-hub>=1.0.0",
 ]
 examples = [
+    "rich>=15.0.0",
     "sounddevice>=0.5.6",
 ]
 
