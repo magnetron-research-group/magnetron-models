@@ -19,7 +19,7 @@ if context.is_device_available('cuda:0'):
 
 SPEECH_FILE = Path(__file__).parent / 'speech.mp3'
 
-whisper: InferenceAdapter = load(download_model('mario-sieg/magnetron-whisper', 'whisper-base-bf16.mag'))
+whisper: InferenceAdapter = load(download_model('mario-sieg/magnetron-whisper', 'whisper-base-f16.mag'))
 request = TranscribeRequest(SPEECH_FILE)
 
 # Streaming token by token

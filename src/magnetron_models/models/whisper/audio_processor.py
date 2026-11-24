@@ -50,6 +50,8 @@ class LogMelSpectogram:
         return cls(mel_filters, pp_cfg['n_fft'], pp_cfg['hop_length'], pp_cfg['n_samples'])
 
     def __call__(self, chunk: Tensor) -> Tensor:
+        if chunk.device != self.window.device:
+            chunk = chunk.transfer(self.window.device)
         num = chunk.shape[0]
         if num < self.samples:
             chunk = chunk.pad((0, self.samples - num))

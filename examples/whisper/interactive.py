@@ -39,7 +39,7 @@ def mic_frames(device: int | str | None = None) -> Iterator[Tensor]:
 
 
 def main() -> None:
-    whisper: InferenceAdapter = load(download_model('mario-sieg/magnetron-whisper', 'whisper-base-bf16.mag'))
+    whisper: InferenceAdapter = load(download_model('mario-sieg/magnetron-whisper', 'whisper-base-f16.mag'))
     request = TranscribeRequest(segments(mic_frames(), SpeechBandEnergyVAD()), language=LANGUAGE, condition_on_previous=False)
     print('listening... (ctrl+c to stop)', flush=True)
     seg_start: float | None = None
